@@ -1,0 +1,90 @@
+{
+  "name": "revisions",
+  "displayName": "Revisions",
+  "description": "Code revision history and restoration for VS Code",
+  "publisher": "Rewalnerski-kdbvr",
+  "icon": "icon.png",
+  "version": "0.4.1",
+  "engines": {
+    "vscode": "^1.93.0"
+  },
+  "categories": [
+    "Other",
+    "AI"
+  ],
+  "activationEvents": [
+    "onCommand:revisions.createSnapshot",
+    "onCommand:revisions.viewHistory",
+    "onCommand:revisions.cleanupRevisions"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "configuration": {
+      "title": "Revisions",
+      "properties": {
+        "revisions.maxRevisionsPerFile": {
+          "type": "number",
+          "default": 50,
+          "minimum": 1,
+          "maximum": 1000,
+          "description": "Maximum number of revisions to store per file"
+        }
+      }
+    },
+    "commands": [
+      {
+        "command": "revisions.createSnapshot",
+        "title": "Revisions: Create Snapshot"
+      },
+      {
+        "command": "revisions.viewHistory",
+        "title": "Revisions: View History"
+      },
+      {
+        "command": "revisions.cleanupRevisions",
+        "title": "Revisions: Clean Up Old Revisions"
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run package",
+    "compile": "webpack",
+    "watch": "webpack --watch",
+    "package": "webpack --mode production --devtool hidden-source-map",
+    "compile-tests": "tsc -p . --outDir out",
+    "watch-tests": "tsc -p . -w --outDir out",
+    "pretest": "npm run compile-tests && npm run compile && npm run lint",
+    "lint": "eslint src",
+    "test": "vscode-test"
+  },
+  "devDependencies": {
+    "@types/diff-match-patch": "^1.0.36",
+    "@types/mocha": "^10.0.7",
+    "@types/node": "20.x",
+    "@types/vscode": "^1.93.0",
+    "@typescript-eslint/eslint-plugin": "^6.21.0",
+    "@typescript-eslint/parser": "^6.21.0",
+    "@vscode/test-cli": "^0.0.10",
+    "@vscode/test-electron": "^2.4.1",
+    "eslint": "^8.56.0",
+    "ts-loader": "^9.5.1",
+    "typescript": "^5.3.3",
+    "webpack": "^5.94.0",
+    "webpack-cli": "^5.1.4"
+  },
+  "dependencies": {
+    "diff-match-patch": "^1.0.5"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/NDDonman/revisions.git"
+  },
+  "keywords": [
+    "revision",
+    "history",
+    "backup",
+    "versioning",
+    "code snapshot"
+  ],
+  "license": "MIT"
+}
