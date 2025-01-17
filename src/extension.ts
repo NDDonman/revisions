@@ -15,7 +15,7 @@ interface FileRevisions {
 }
 
 type WebViewMessage = {
-    command: 'compare' | 'restore' | 'cleanup';
+    command: 'compare' | 'restore' | 'cleanup' | 'restoreInplace';
     revisionIndex?: number;
 };
 
@@ -121,7 +121,6 @@ async function createSnapshotForFile(document: vscode.TextDocument, context: vsc
         
         if (content.length > MAX_FILE_SIZE) {
             console.warn(`File ${fileName} is too large for efficient diffing. Consider alternative approach.`);
-            // Implement alternative approach for large files
             return;
         }
         
@@ -141,14 +140,12 @@ async function createSnapshotForFile(document: vscode.TextDocument, context: vsc
                 timestamp: Date.now()
             });
 
-            // Trim revisions if we've exceeded the maximum
             const maxRevisions = getMaxRevisionsPerFile();
             if (globalRevisions[fileName].revisions.length > maxRevisions) {
                 globalRevisions[fileName].revisions = globalRevisions[fileName].revisions.slice(-maxRevisions);
             }
         }
         
-        // Save updated revisions to globalState
         await updateGlobalState(context);
         
         console.log(`Snapshot created for ${fileName}. Current revisions:`, JSON.stringify(globalRevisions[fileName]));
@@ -170,39 +167,74 @@ function handleWebviewMessage(message: WebViewMessage, fileName: string, editor:
                 restoreRevision(fileName, message.revisionIndex, editor);
             }
             break;
+        case 'restoreInplace':
+            if (message.revisionIndex !== undefined) {
+                restoreRevisionInplace(fileName, message.revisionIndex, editor);
+            }
+            break;
         case 'cleanup':
             vscode.commands.executeCommand('revisions.cleanupRevisions');
             break;
     }
 }
 
-function compareRevisions(fileName: string, revisionIndex: number, editor: vscode.TextEditor) {
-    const oldContent = getContentAtRevision(fileName, revisionIndex);
-    const newContent = editor.document.getText();
-    
-    const uri = vscode.Uri.parse(`revisions-diff:${fileName}`);
-    vscode.commands.executeCommand('vscode.diff', 
-        uri.with({ scheme: 'revisions-diff', path: `${fileName}-r${revisionIndex}` }), 
-        uri.with({ scheme: 'revisions-diff', path: `${fileName}-current` }),
-        `Revision ${revisionIndex} ↔ Current`
-    );
+async function compareRevisions(fileName: string, revisionIndex: number, editor: vscode.TextEditor) {
+    try {
+        const oldContent = getContentAtRevision(fileName, revisionIndex);
+        
+        // Create a temporary document for the old content
+        const tempDoc = await vscode.workspace.openTextDocument({
+            content: oldContent,
+            language: editor.document.languageId
+        });
+
+        // Compare using the temp document and current document
+        await vscode.commands.executeCommand('vscode.diff',
+            tempDoc.uri,
+            editor.document.uri,
+            `Revision ${revisionIndex} ↔ Current`
+        );
+    } catch (error: unknown) {
+        handleError(error, 'comparing revisions');
+    }
 }
 
-function restoreRevision(fileName: string, revisionIndex: number, editor: vscode.TextEditor) {
-    const content = getContentAtRevision(fileName, revisionIndex);
-    editor.edit(editBuilder => {
-        const fullRange = new vscode.Range(
-            editor.document.positionAt(0),
-            editor.document.positionAt(editor.document.getText().length)
-        );
-        editBuilder.replace(fullRange, content);
-    }).then(success => {
-        if (success) {
-            vscode.window.showInformationMessage(`Restored to revision ${revisionIndex}`);
-        } else {
-            vscode.window.showErrorMessage('Failed to restore revision');
-        }
-    });
+async function restoreRevision(fileName: string, revisionIndex: number, editor: vscode.TextEditor) {
+    try {
+        const content = getContentAtRevision(fileName, revisionIndex);
+        
+        // new tab
+        const doc = await vscode.workspace.openTextDocument({
+            content: content,
+            language: editor.document.languageId
+        });
+        
+        // Show  in  new tab
+        await vscode.window.showTextDocument(doc, {
+            viewColumn: vscode.ViewColumn.Beside,
+            preview: false
+        });
+        
+        vscode.window.showInformationMessage(`Revision ${revisionIndex} opened in new tab`);
+    } catch (error: unknown) {
+        handleError(error, 'restoring revision');
+    }
+}
+
+async function restoreRevisionInplace(fileName: string, revisionIndex: number, editor: vscode.TextEditor) {
+    try {
+        const content = getContentAtRevision(fileName, revisionIndex);
+        await editor.edit(editBuilder => {
+            const fullRange = new vscode.Range(
+                editor.document.positionAt(0),
+                editor.document.positionAt(editor.document.getText().length)
+            );
+            editBuilder.replace(fullRange, content);
+        });
+        vscode.window.showInformationMessage(`Restored to revision ${revisionIndex} in current tab`);
+    } catch (error: unknown) {
+        handleError(error, 'restoring revision in-place');
+    }
 }
 
 function getContentAtRevision(fileName: string, revisionIndex: number): string {
@@ -241,14 +273,16 @@ function getWebviewContent(fileName: string, fileRevisions: { baseContent: strin
                 <li>
                     Base Version
                     <button onclick="sendMessage('compare', -1)">Compare</button>
-                    <button onclick="sendMessage('restore', -1)">Restore</button>
+                    <button onclick="sendMessage('restore', -1)">Open in New Tab</button>
+                    <button onclick="sendMessage('restoreInplace', -1)">Restore In Current Tab</button>
                 </li>
                 ${fileRevisions.revisions.map((revision, index) => `
                     <li>
                         Revision ${index + 1}
                         (${new Date(revision.timestamp).toLocaleString()})
                         <button onclick="sendMessage('compare', ${index})">Compare</button>
-                        <button onclick="sendMessage('restore', ${index})">Restore</button>
+                        <button onclick="sendMessage('restore', ${index})">Open in New Tab</button>
+                        <button onclick="sendMessage('restoreInplace', ${index})">Restore In Current Tab</button>
                     </li>
                 `).join('')}
             </ul>
@@ -273,7 +307,6 @@ function cleanupOldRevisions(days: number): number {
         fileRevisions.revisions = fileRevisions.revisions.filter(revision => revision.timestamp > cutoffTime);
         totalCleaned += originalLength - fileRevisions.revisions.length;
 
-        // If all revisions were removed, delete the file entry
         if (fileRevisions.revisions.length === 0) {
             delete globalRevisions[fileName];
         }
