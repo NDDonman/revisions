@@ -259,37 +259,107 @@ function getWebviewContent(fileName: string, fileRevisions: { baseContent: strin
             <meta charset="UTF-8">
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
             <title>Revisions History</title>
+            <script src="https://cdn.tailwindcss.com"></script>
             <style>
-                body { font-family: Arial, sans-serif; padding: 10px; }
-                ul { list-style-type: none; padding: 0; }
-                li { margin-bottom: 10px; }
-                button { margin-right: 5px; }
+                @keyframes fadeIn {
+                    from { opacity: 0; transform: translateY(-10px); }
+                    to { opacity: 1; transform: translateY(0); }
+                }
+                .animate-fade-in {
+                    animation: fadeIn 0.3s ease-out forwards;
+                }
             </style>
         </head>
-        <body>
-            <h1>Revisions for ${fileName}</h1>
-            <button onclick="sendMessage('cleanup')">Clean Up Old Revisions</button>
-            <ul>
-                <li>
-                    Base Version
-                    <button onclick="sendMessage('compare', -1)">Compare</button>
-                    <button onclick="sendMessage('restore', -1)">Open in New Tab</button>
-                    <button onclick="sendMessage('restoreInplace', -1)">Restore In Current Tab</button>
-                </li>
-                ${fileRevisions.revisions.map((revision, index) => `
-                    <li>
-                        Revision ${index + 1}
-                        (${new Date(revision.timestamp).toLocaleString()})
-                        <button onclick="sendMessage('compare', ${index})">Compare</button>
-                        <button onclick="sendMessage('restore', ${index})">Open in New Tab</button>
-                        <button onclick="sendMessage('restoreInplace', ${index})">Restore In Current Tab</button>
-                    </li>
-                `).join('')}
-            </ul>
+        <body class="bg-gray-50 dark:bg-gray-800 p-4 min-h-screen">
+            <div class="max-w-4xl mx-auto">
+                <div class="bg-white dark:bg-gray-700 rounded-lg shadow-lg p-6 mb-6">
+                    <h1 class="text-2xl font-bold mb-4 text-gray-800 dark:text-white">
+                        Revisions for ${fileName.split('/').pop()}
+                    </h1>
+                    <button 
+                        onclick="sendMessage('cleanup')"
+                        class="mb-6 bg-red-500 hover:bg-red-600 text-white font-semibold py-2 px-4 rounded-lg transition duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-opacity-50"
+                    >
+                        Clean Up Old Revisions
+                    </button>
+
+                    <div class="space-y-4">
+                        <div class="bg-gray-50 dark:bg-gray-600 rounded-lg p-4 animate-fade-in">
+                            <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between">
+                                <div class="flex items-center mb-3 sm:mb-0">
+                                    <span class="text-lg font-semibold text-gray-700 dark:text-gray-200">Base Version</span>
+                                </div>
+                                <div class="flex flex-wrap gap-2">
+                                    <button 
+                                        onclick="sendMessage('compare', -1)"
+                                        class="bg-blue-500 hover:bg-blue-600 text-white px-3 py-1.5 rounded-md text-sm font-medium transition duration-200 ease-in-out"
+                                    >
+                                        Compare
+                                    </button>
+                                    <button 
+                                        onclick="sendMessage('restore', -1)"
+                                        class="bg-green-500 hover:bg-green-600 text-white px-3 py-1.5 rounded-md text-sm font-medium transition duration-200 ease-in-out"
+                                    >
+                                        Open New Tab
+                                    </button>
+                                    <button 
+                                        onclick="sendMessage('restoreInplace', -1)"
+                                        class="bg-purple-500 hover:bg-purple-600 text-white px-3 py-1.5 rounded-md text-sm font-medium transition duration-200 ease-in-out"
+                                    >
+                                        Restore Here
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        ${fileRevisions.revisions.map((revision, index) => `
+                            <div class="bg-gray-50 dark:bg-gray-600 rounded-lg p-4 animate-fade-in" style="animation-delay: ${index * 50}ms">
+                                <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between">
+                                    <div class="flex flex-col mb-3 sm:mb-0">
+                                        <span class="text-lg font-semibold text-gray-700 dark:text-gray-200">
+                                            Revision ${index + 1}
+                                        </span>
+                                        <span class="text-sm text-gray-500 dark:text-gray-300">
+                                            ${new Date(revision.timestamp).toLocaleString()}
+                                        </span>
+                                    </div>
+                                    <div class="flex flex-wrap gap-2">
+                                        <button 
+                                            onclick="sendMessage('compare', ${index})"
+                                            class="bg-blue-500 hover:bg-blue-600 text-white px-3 py-1.5 rounded-md text-sm font-medium transition duration-200 ease-in-out"
+                                        >
+                                            Compare
+                                        </button>
+                                        <button 
+                                            onclick="sendMessage('restore', ${index})"
+                                            class="bg-green-500 hover:bg-green-600 text-white px-3 py-1.5 rounded-md text-sm font-medium transition duration-200 ease-in-out"
+                                        >
+                                            Open New Tab
+                                        </button>
+                                        <button 
+                                            onclick="sendMessage('restoreInplace', ${index})"
+                                            class="bg-purple-500 hover:bg-purple-600 text-white px-3 py-1.5 rounded-md text-sm font-medium transition duration-200 ease-in-out"
+                                        >
+                                            Restore Here
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            </div>
+
             <script>
                 const vscode = acquireVsCodeApi();
                 function sendMessage(command, revisionIndex) {
                     vscode.postMessage({ command: command, revisionIndex: revisionIndex });
+                }
+
+                // Support for dark mode
+                const isDarkMode = document.body.classList.contains('vscode-dark');
+                if (isDarkMode) {
+                    document.body.classList.add('dark');
                 }
             </script>
         </body>
