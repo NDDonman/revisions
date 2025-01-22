@@ -1,3 +1,4 @@
+[![CodeQL Advanced](https://github.com/NDDonman/revisions/actions/workflows/codeql.yml/badge.svg)](https://github.com/NDDonman/revisions/actions/workflows/codeql.yml)
 # Revisions - VS Code Extension
 
 Revisions is a powerful VS Code extension that helps you maintain a history of your code changes, allowing you to create, view, compare, and restore previous versions of your files.
