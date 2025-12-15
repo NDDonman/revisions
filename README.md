@@ -12,7 +12,7 @@ Revisions is a powerful VS Code extension that helps you maintain a history of y
 - **Compare Revisions**: Compare any revision with the current file state.
 - **Restore Revisions**: Easily restore your file to any previous revision.
 - **Cleanup Old Revisions**: Remove old revisions to manage storage.
-- **Name & Rename Revisions**: Easily name or rename your file using the pencil icon.
+- **Name or Rename Revisions**: Easily name or rename your file using the pencil icon.
 
 ## Installation
 
