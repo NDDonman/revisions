@@ -21,10 +21,21 @@ type WebViewMessage = {
     name?: string;
 };
 
-const MAX_FILE_SIZE = 1024 * 1024; // 1MB this is the max limit for revision file
+const MAX_FILE_SIZE = 1024 * 1024; // 1MB this is the max limit for revision file updates will come in version 6.0 for bigger file size
 
 let globalRevisions: FileRevisions = {};
 const dmp = new diff_match_patch();
+
+// Helper function to escape HTML entities and prevent XSS
+function escapeHtml(unsafe: string): string {
+    return unsafe
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;')
+        .replace(/\\/g, '&#92;');
+}
 
 function handleError(error: unknown, context: string): void {
     console.error(`Error in ${context}:`, error);
@@ -348,11 +359,11 @@ function getWebviewContent(fileName: string, fileRevisions: { baseContent: strin
                                     <div class="flex flex-col mb-3 sm:mb-0">
                                         <div class="flex items-center gap-2" id="name-display-${index}">
                                             <span class="text-lg font-semibold text-gray-700 dark:text-gray-200">
-                                                ${revision.name ? revision.name : `Revision ${index + 1}`}
+                                                ${revision.name ? escapeHtml(revision.name) : `Revision ${index + 1}`}
                                             </span>
                                             ${revision.name ? `<span class="text-xs text-gray-400 dark:text-gray-400">(#${index + 1})</span>` : ''}
                                             <button
-                                                onclick="startRename(${index}, '${(revision.name || '').replace(/'/g, "\\'")}')"
+                                                onclick="startRename(${index}, '${escapeHtml(revision.name || '')}')"
                                                 class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 p-1 rounded transition duration-200"
                                                 title="Rename revision"
                                             >
