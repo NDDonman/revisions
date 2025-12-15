@@ -352,7 +352,7 @@ function getWebviewContent(fileName: string, fileRevisions: { baseContent: strin
                                             </span>
                                             ${revision.name ? `<span class="text-xs text-gray-400 dark:text-gray-400">(#${index + 1})</span>` : ''}
                                             <button
-                                                onclick="startRename(${index}, '${(revision.name || '').replace(/'/g, "\\'")}')"
+                                                onclick="startRename(${index}, '${(revision.name || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'")}')"
                                                 class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 p-1 rounded transition duration-200"
                                                 title="Rename revision"
                                             >
