@@ -4,7 +4,7 @@
   "description": "Code revision history and restoration for VS Code",
   "publisher": "Rewalnerski-kdbvr",
   "icon": "icon.png",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "engines": {
     "vscode": "^1.93.0"
   },
