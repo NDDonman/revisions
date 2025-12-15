@@ -5,6 +5,7 @@ import { getMaxRevisionsPerFile, onConfigChange } from './configuration';
 interface Revision {
     diff: string;
     timestamp: number;
+    name?: string;
 }
 
 interface FileRevisions {
@@ -15,11 +16,12 @@ interface FileRevisions {
 }
 
 type WebViewMessage = {
-    command: 'compare' | 'restore' | 'cleanup' | 'restoreInplace';
+    command: 'compare' | 'restore' | 'cleanup' | 'restoreInplace' | 'rename';
     revisionIndex?: number;
+    name?: string;
 };
 
-const MAX_FILE_SIZE = 1024 * 1024; // 1MB
+const MAX_FILE_SIZE = 1024 * 1024; // 1MB this is the max limit for revision file
 
 let globalRevisions: FileRevisions = {};
 const dmp = new diff_match_patch();
@@ -44,10 +46,15 @@ export function activate(context: vscode.ExtensionContext) {
     trimRevisionsToMax();
     onConfigChange(context, trimRevisionsToMax);
 
-    let createSnapshot = vscode.commands.registerCommand('revisions.createSnapshot', () => {
+    let createSnapshot = vscode.commands.registerCommand('revisions.createSnapshot', async () => {
         const editor = vscode.window.activeTextEditor;
         if (editor) {
-            createSnapshotForFile(editor.document, context);
+            const name = await vscode.window.showInputBox({
+                prompt: 'Enter a name for this revision (optional)',
+                placeHolder: 'e.g., "Before refactoring", "Working version"'
+            });
+            // name will be undefined if cancelled, empty string if submitted empty
+            createSnapshotForFile(editor.document, context, name || undefined);
         } else {
             vscode.window.showErrorMessage('No active text editor');
         }
@@ -68,7 +75,7 @@ export function activate(context: vscode.ExtensionContext) {
                 );
                 panel.webview.html = getWebviewContent(fileName, globalRevisions[fileName]);
                 panel.webview.onDidReceiveMessage(
-                    message => handleWebviewMessage(message, fileName, editor, panel),
+                    message => handleWebviewMessage(message, fileName, editor, panel, context),
                     undefined,
                     context.subscriptions
                 );
@@ -114,16 +121,16 @@ export function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(createSnapshot, viewHistory, cleanupRevisions);
 }
 
-async function createSnapshotForFile(document: vscode.TextDocument, context: vscode.ExtensionContext) {
+async function createSnapshotForFile(document: vscode.TextDocument, context: vscode.ExtensionContext, name?: string) {
     try {
         const fileName = document.fileName;
         const content = document.getText();
-        
+
         if (content.length > MAX_FILE_SIZE) {
             console.warn(`File ${fileName} is too large for efficient diffing. Consider alternative approach.`);
             return;
         }
-        
+
         if (!globalRevisions[fileName]) {
             globalRevisions[fileName] = {
                 baseContent: content,
@@ -134,20 +141,24 @@ async function createSnapshotForFile(document: vscode.TextDocument, context: vsc
             const diff = dmp.diff_main(lastContent, content);
             dmp.diff_cleanupSemantic(diff);
             const patchText = dmp.patch_toText(dmp.patch_make(diff));
-            
-            globalRevisions[fileName].revisions.push({
+
+            const revision: Revision = {
                 diff: patchText,
                 timestamp: Date.now()
-            });
+            };
+            if (name) {
+                revision.name = name;
+            }
+            globalRevisions[fileName].revisions.push(revision);
 
             const maxRevisions = getMaxRevisionsPerFile();
             if (globalRevisions[fileName].revisions.length > maxRevisions) {
                 globalRevisions[fileName].revisions = globalRevisions[fileName].revisions.slice(-maxRevisions);
             }
         }
-        
+
         await updateGlobalState(context);
-        
+
         console.log(`Snapshot created for ${fileName}. Current revisions:`, JSON.stringify(globalRevisions[fileName]));
         vscode.window.showInformationMessage(`Snapshot created for ${fileName}`);
     } catch (error: unknown) {
@@ -155,7 +166,7 @@ async function createSnapshotForFile(document: vscode.TextDocument, context: vsc
     }
 }
 
-function handleWebviewMessage(message: WebViewMessage, fileName: string, editor: vscode.TextEditor, panel: vscode.WebviewPanel) {
+function handleWebviewMessage(message: WebViewMessage, fileName: string, editor: vscode.TextEditor, panel: vscode.WebviewPanel, context: vscode.ExtensionContext) {
     switch (message.command) {
         case 'compare':
             if (message.revisionIndex !== undefined) {
@@ -174,6 +185,11 @@ function handleWebviewMessage(message: WebViewMessage, fileName: string, editor:
             break;
         case 'cleanup':
             vscode.commands.executeCommand('revisions.cleanupRevisions');
+            break;
+        case 'rename':
+            if (message.revisionIndex !== undefined && message.name !== undefined) {
+                renameRevision(fileName, message.revisionIndex, message.name, context, panel);
+            }
             break;
     }
 }
@@ -234,6 +250,20 @@ async function restoreRevisionInplace(fileName: string, revisionIndex: number, e
         vscode.window.showInformationMessage(`Restored to revision ${revisionIndex} in current tab`);
     } catch (error: unknown) {
         handleError(error, 'restoring revision in-place');
+    }
+}
+
+async function renameRevision(fileName: string, revisionIndex: number, name: string, context: vscode.ExtensionContext, panel: vscode.WebviewPanel) {
+    try {
+        if (globalRevisions[fileName] && globalRevisions[fileName].revisions[revisionIndex]) {
+            globalRevisions[fileName].revisions[revisionIndex].name = name || undefined;
+            await updateGlobalState(context);
+            // Refresh the WebView to show updated name
+            panel.webview.html = getWebviewContent(fileName, globalRevisions[fileName]);
+            vscode.window.showInformationMessage(`Revision renamed successfully`);
+        }
+    } catch (error: unknown) {
+        handleError(error, 'renaming revision');
     }
 }
 
@@ -316,27 +346,60 @@ function getWebviewContent(fileName: string, fileRevisions: { baseContent: strin
                             <div class="bg-gray-50 dark:bg-gray-600 rounded-lg p-4 animate-fade-in" style="animation-delay: ${index * 50}ms">
                                 <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between">
                                     <div class="flex flex-col mb-3 sm:mb-0">
-                                        <span class="text-lg font-semibold text-gray-700 dark:text-gray-200">
-                                            Revision ${index + 1}
-                                        </span>
+                                        <div class="flex items-center gap-2" id="name-display-${index}">
+                                            <span class="text-lg font-semibold text-gray-700 dark:text-gray-200">
+                                                ${revision.name ? revision.name : `Revision ${index + 1}`}
+                                            </span>
+                                            ${revision.name ? `<span class="text-xs text-gray-400 dark:text-gray-400">(#${index + 1})</span>` : ''}
+                                            <button
+                                                onclick="startRename(${index}, '${(revision.name || '').replace(/'/g, "\\'")}')"
+                                                class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 p-1 rounded transition duration-200"
+                                                title="Rename revision"
+                                            >
+                                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                                                </svg>
+                                            </button>
+                                        </div>
+                                        <div class="hidden items-center gap-2" id="name-edit-${index}">
+                                            <input
+                                                type="text"
+                                                id="name-input-${index}"
+                                                class="px-2 py-1 text-sm border rounded dark:bg-gray-700 dark:border-gray-500 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                placeholder="Enter revision name"
+                                                onkeydown="handleRenameKeydown(event, ${index})"
+                                            />
+                                            <button
+                                                onclick="saveRename(${index})"
+                                                class="bg-blue-500 hover:bg-blue-600 text-white px-2 py-1 rounded text-xs font-medium transition duration-200"
+                                            >
+                                                Save
+                                            </button>
+                                            <button
+                                                onclick="cancelRename(${index})"
+                                                class="bg-gray-300 hover:bg-gray-400 dark:bg-gray-500 dark:hover:bg-gray-400 text-gray-700 dark:text-white px-2 py-1 rounded text-xs font-medium transition duration-200"
+                                            >
+                                                Cancel
+                                            </button>
+                                        </div>
                                         <span class="text-sm text-gray-500 dark:text-gray-300">
                                             ${new Date(revision.timestamp).toLocaleString()}
                                         </span>
                                     </div>
                                     <div class="flex flex-wrap gap-2">
-                                        <button 
+                                        <button
                                             onclick="sendMessage('compare', ${index})"
                                             class="bg-blue-500 hover:bg-blue-600 text-white px-3 py-1.5 rounded-md text-sm font-medium transition duration-200 ease-in-out"
                                         >
                                             Compare
                                         </button>
-                                        <button 
+                                        <button
                                             onclick="sendMessage('restore', ${index})"
                                             class="bg-green-500 hover:bg-green-600 text-white px-3 py-1.5 rounded-md text-sm font-medium transition duration-200 ease-in-out"
                                         >
                                             Open New Tab
                                         </button>
-                                        <button 
+                                        <button
                                             onclick="sendMessage('restoreInplace', ${index})"
                                             class="bg-purple-500 hover:bg-purple-600 text-white px-3 py-1.5 rounded-md text-sm font-medium transition duration-200 ease-in-out"
                                         >
@@ -352,8 +415,40 @@ function getWebviewContent(fileName: string, fileRevisions: { baseContent: strin
 
             <script>
                 const vscode = acquireVsCodeApi();
-                function sendMessage(command, revisionIndex) {
-                    vscode.postMessage({ command: command, revisionIndex: revisionIndex });
+                function sendMessage(command, revisionIndex, name) {
+                    vscode.postMessage({ command: command, revisionIndex: revisionIndex, name: name });
+                }
+
+                function startRename(index, currentName) {
+                    document.getElementById('name-display-' + index).classList.add('hidden');
+                    document.getElementById('name-edit-' + index).classList.remove('hidden');
+                    document.getElementById('name-edit-' + index).classList.add('flex');
+                    const input = document.getElementById('name-input-' + index);
+                    input.value = currentName;
+                    input.focus();
+                    input.select();
+                }
+
+                function cancelRename(index) {
+                    document.getElementById('name-display-' + index).classList.remove('hidden');
+                    document.getElementById('name-edit-' + index).classList.add('hidden');
+                    document.getElementById('name-edit-' + index).classList.remove('flex');
+                }
+
+                function saveRename(index) {
+                    const input = document.getElementById('name-input-' + index);
+                    const name = input.value.trim();
+                    sendMessage('rename', index, name);
+                }
+
+                function handleRenameKeydown(event, index) {
+                    if (event.key === 'Enter') {
+                        event.preventDefault();
+                        saveRename(index);
+                    } else if (event.key === 'Escape') {
+                        event.preventDefault();
+                        cancelRename(index);
+                    }
                 }
 
                 // Support for dark mode
