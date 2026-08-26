@@ -1,4 +1,4 @@
-[![CodeQL Advanced](https://github.com/NDDonman/revisions/actions/workflows/codeql.yml/badge.svg)](https://github.com/NDDonman/revisions/actions/workflows/codeql.yml)
+
 
 # Revisions - VS Code Extension
 
